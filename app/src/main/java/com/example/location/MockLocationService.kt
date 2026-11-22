@@ -59,14 +59,19 @@ class MockLocationService : Service() {
                     return START_NOT_STICKY
                 }
                 val notification = buildNotification(controller.state.value)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                        )
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification)
+                    }
+                } catch (_: Exception) {
+                    stopSelf()
+                    return START_NOT_STICKY
                 }
                 startMockLoop()
                 return START_STICKY
@@ -168,7 +173,7 @@ class MockLocationService : Service() {
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher_round)
+            .setSmallIcon(R.drawable.ic_stat_geojoy)
             .setContentTitle("GeoJoy • $statusTitle")
             .setContentText(GeoMath.formatCoords(state.latitude, state.longitude))
             .setOngoing(true)

@@ -1,20 +1,22 @@
 package com.example.ui.components
 
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
 import android.graphics.RectF
+import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -22,8 +24,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.MapLayerStyle
 import com.example.location.GeoPointData
 import com.example.location.MockRunStatus
+import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
@@ -35,7 +39,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private object GeoJoyTileSources {
-    val cartoVoyager: OnlineTileSourceBase = object : OnlineTileSourceBase(
+    val cartoVoyager: OnlineTileSourceBase = XYTileSource(
         "CartoVoyager",
         0,
         19,
@@ -46,16 +50,9 @@ private object GeoJoyTileSources {
             "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
             "https://c.basemaps.cartocdn.com/rastertiles/voyager/"
         )
-    ) {
-        override fun getTileURLString(pMapTileIndex: Long): String {
-            val z = MapTileIndex.getZoom(pMapTileIndex)
-            val x = MapTileIndex.getX(pMapTileIndex)
-            val y = MapTileIndex.getY(pMapTileIndex)
-            return "$baseUrl$z/$x/$y$mImageFilenameEnding"
-        }
-    }
+    )
 
-    val cartoDark: OnlineTileSourceBase = object : OnlineTileSourceBase(
+    val cartoDark: OnlineTileSourceBase = XYTileSource(
         "CartoDark",
         0,
         19,
@@ -66,14 +63,7 @@ private object GeoJoyTileSources {
             "https://b.basemaps.cartocdn.com/rastertiles/dark_all/",
             "https://c.basemaps.cartocdn.com/rastertiles/dark_all/"
         )
-    ) {
-        override fun getTileURLString(pMapTileIndex: Long): String {
-            val z = MapTileIndex.getZoom(pMapTileIndex)
-            val x = MapTileIndex.getX(pMapTileIndex)
-            val y = MapTileIndex.getY(pMapTileIndex)
-            return "$baseUrl$z/$x/$y$mImageFilenameEnding"
-        }
-    }
+    )
 
     val esriSatellite: OnlineTileSourceBase = object : OnlineTileSourceBase(
         "EsriWorldImagery",
@@ -128,10 +118,13 @@ private class LocationPuckOverlay : Overlay() {
     private val conePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
+    private val dropShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x33000000
+        style = Paint.Style.FILL
+    }
     private val whiteRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.FILL
-        setShadowLayer(10f, 0f, 3f, 0x55000000)
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -139,7 +132,6 @@ private class LocationPuckOverlay : Overlay() {
     private val targetPinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFEA4335.toInt()
         style = Paint.Style.FILL
-        setShadowLayer(8f, 0f, 3f, 0x55000000)
     }
     private val targetInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF961B12.toInt()
@@ -154,6 +146,7 @@ private class LocationPuckOverlay : Overlay() {
             mapView.projection.toPixels(target, targetScreenPoint)
             val tx = targetScreenPoint.x.toFloat()
             val ty = targetScreenPoint.y.toFloat()
+            canvas.drawCircle(tx, ty, 8f, dropShadowPaint)
             val pinPath = Path().apply {
                 moveTo(tx, ty)
                 cubicTo(tx - 24f, ty - 28f, tx - 22f, ty - 56f, tx, ty - 56f)
@@ -170,8 +163,8 @@ private class LocationPuckOverlay : Overlay() {
         val cy = screenPoint.y.toFloat()
 
         val primaryColor = when (status) {
-            MockRunStatus.ACTIVE_SYSTEM -> 0xFF0F9D58.toInt() // Emerald active
-            MockRunStatus.ACTIVE_PREVIEW -> 0xFF1A73E8.toInt() // Google Blue
+            MockRunStatus.ACTIVE_SYSTEM -> 0xFF0F9D58.toInt()
+            MockRunStatus.ACTIVE_PREVIEW -> 0xFF1A73E8.toInt()
             MockRunStatus.IDLE -> 0xFF1A73E8.toInt()
         }
         val haloColor = when (status) {
@@ -189,22 +182,19 @@ private class LocationPuckOverlay : Overlay() {
         canvas.drawCircle(cx, cy, haloRadius, haloPaint)
         canvas.drawCircle(cx, cy, haloRadius, haloStrokePaint)
 
-        // Directional heading cone (Google Maps style)
         if (isMoving || status != MockRunStatus.IDLE) {
             val coneRadius = 68f
             val oval = RectF(cx - coneRadius, cy - coneRadius, cx + coneRadius, cy + coneRadius)
-            // Canvas 0 deg is East; Android bearing 0 deg is North (-90 in Canvas)
             val startAngle = bearing - 90f - 28f
             conePaint.color = if (status == MockRunStatus.ACTIVE_SYSTEM) 0x550F9D58 else 0x551A73E8
             canvas.drawArc(oval, startAngle, 56f, true, conePaint)
         }
 
-        // Crisp white outer ring + center puck
+        canvas.drawCircle(cx, cy + 2f, 24f, dropShadowPaint)
         canvas.drawCircle(cx, cy, 22f, whiteRingPaint)
         dotPaint.color = primaryColor
         canvas.drawCircle(cx, cy, 15.5f, dotPaint)
 
-        // Inner directional pointer dot when moving
         if (isMoving) {
             val rad = Math.toRadians((bearing - 90f).toDouble())
             val px = cx + (cos(rad) * 10f).toFloat()
@@ -232,11 +222,11 @@ fun OsmMapView(
     onLongPress: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnSingleTap by rememberUpdatedState(onSingleTap)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
 
-    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     val puckOverlay = remember { LocationPuckOverlay() }
     val trailPolyline = remember {
         Polyline().apply {
@@ -246,73 +236,95 @@ fun OsmMapView(
             outlinePaint.strokeJoin = Paint.Join.ROUND
         }
     }
+
+    val mapView = remember {
+        ensureOsmdroidConfig(context.applicationContext)
+        MapView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setUseDataConnection(true)
+            setMultiTouchControls(true)
+            isHorizontalMapRepetitionEnabled = true
+            isVerticalMapRepetitionEnabled = false
+            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+            minZoomLevel = 3.0
+            maxZoomLevel = 19.5
+            isTilesScaledToDpi = true
+            overlayManager.tilesOverlay.loadingBackgroundColor = 0xFFE8EAED.toInt()
+            overlayManager.tilesOverlay.loadingLineColor = 0xFFDADCE0.toInt()
+            setTileSource(GeoJoyTileSources.cartoVoyager)
+
+            val initialPoint = GeoPoint(latitude, longitude)
+            controller.setZoom(16.2)
+            controller.setCenter(initialPoint)
+            addOnFirstLayoutListener { _, _, _, _, _ ->
+                controller.setZoom(16.2)
+                controller.setCenter(GeoPoint(latitude, longitude))
+                invalidate()
+            }
+
+            val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                    p?.let { currentOnSingleTap(it.latitude, it.longitude) }
+                    return true
+                }
+
+                override fun longPressHelper(p: GeoPoint?): Boolean {
+                    p?.let { currentOnLongPress(it.latitude, it.longitude) }
+                    return true
+                }
+            })
+
+            overlays.add(eventsOverlay)
+            overlays.add(trailPolyline)
+            overlays.add(puckOverlay)
+        }
+    }
+
     var lastHandledRecenter by remember { mutableIntStateOf(0) }
     var lastHandledZoom by remember { mutableIntStateOf(0) }
 
-    DisposableEffect(lifecycleOwner, mapViewRef) {
-        val mv = mapViewRef
+    DisposableEffect(lifecycleOwner, mapView) {
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            mapView.onResume()
+        }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> mv?.onResume()
-                Lifecycle.Event.ON_PAUSE -> mv?.onPause()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            mv?.onDetach()
         }
     }
 
-    LaunchedEffect(recenterTrigger, mapViewRef) {
-        val mv = mapViewRef ?: return@LaunchedEffect
+    LaunchedEffect(recenterTrigger, mapView) {
         if (recenterTrigger > lastHandledRecenter) {
             lastHandledRecenter = recenterTrigger
-            val targetZoom = mv.zoomLevelDouble.coerceAtLeast(16.2)
-            mv.controller.animateTo(GeoPoint(latitude, longitude), targetZoom, 420L)
+            val targetZoom = mapView.zoomLevelDouble.coerceAtLeast(16.2)
+            mapView.controller.animateTo(GeoPoint(latitude, longitude), targetZoom, 420L)
         }
     }
 
-    LaunchedEffect(zoomDeltaTrigger, mapViewRef) {
-        val mv = mapViewRef ?: return@LaunchedEffect
+    LaunchedEffect(zoomDeltaTrigger, mapView) {
         if (zoomDeltaTrigger.first > lastHandledZoom) {
             lastHandledZoom = zoomDeltaTrigger.first
-            val nextZoom = (mv.zoomLevelDouble + zoomDeltaTrigger.second).coerceIn(3.0, 19.0)
-            mv.controller.setZoom(nextZoom)
+            val nextZoom = (mapView.zoomLevelDouble + zoomDeltaTrigger.second).coerceIn(3.0, 19.0)
+            mapView.controller.setZoom(nextZoom)
         }
     }
 
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            MapView(context).apply {
-                setMultiTouchControls(true)
-                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                minZoomLevel = 3.0
-                maxZoomLevel = 19.5
-                isTilesScaledToDpi = true
-                setTileSource(GeoJoyTileSources.cartoVoyager)
-                controller.setZoom(16.2)
-                controller.setCenter(GeoPoint(latitude, longitude))
-
-                val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                        p?.let { currentOnSingleTap(it.latitude, it.longitude) }
-                        return true
-                    }
-
-                    override fun longPressHelper(p: GeoPoint?): Boolean {
-                        p?.let { currentOnLongPress(it.latitude, it.longitude) }
-                        return true
-                    }
-                })
-
-                overlays.add(eventsOverlay)
-                overlays.add(trailPolyline)
-                overlays.add(puckOverlay)
-                mapViewRef = this
-            }
+        factory = { mapView },
+        onRelease = { mv ->
+            mv.onPause()
+            mv.onDetach()
         },
         update = { mv ->
             val desiredSource = when (layerStyle) {
@@ -323,6 +335,14 @@ fun OsmMapView(
             }
             if (mv.tileProvider.tileSource.name() != desiredSource.name()) {
                 mv.setTileSource(desiredSource)
+            }
+
+            if (layerStyle == MapLayerStyle.DARK) {
+                mv.overlayManager.tilesOverlay.loadingBackgroundColor = 0xFF1B1F26.toInt()
+                mv.overlayManager.tilesOverlay.loadingLineColor = 0xFF282D37.toInt()
+            } else {
+                mv.overlayManager.tilesOverlay.loadingBackgroundColor = 0xFFE8EAED.toInt()
+                mv.overlayManager.tilesOverlay.loadingLineColor = 0xFFDADCE0.toInt()
             }
 
             val currentGeo = GeoPoint(latitude, longitude)
@@ -351,4 +371,17 @@ fun OsmMapView(
             mv.invalidate()
         }
     )
+}
+
+private fun ensureOsmdroidConfig(context: Context) {
+    val config = Configuration.getInstance()
+    if (config.osmdroidTileCache == null || !config.osmdroidTileCache.exists()) {
+        val prefs = context.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
+        val baseDir = context.filesDir.resolve("osmdroid").apply { mkdirs() }
+        val tileCacheDir = context.cacheDir.resolve("osmdroid_tiles").apply { mkdirs() }
+        config.load(context, prefs)
+        config.userAgentValue = "${context.packageName}/1.0"
+        config.osmdroidBasePath = baseDir
+        config.osmdroidTileCache = tileCacheDir
+    }
 }

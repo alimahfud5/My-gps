@@ -23,11 +23,19 @@ class GeoJoyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Configure osmdroid user agent & tile cache
+
+        // Load osmdroid defaults first, then override paths to app-private directories with mkdirs()
+        val osmdroidPrefs = getSharedPreferences("osmdroid_prefs", MODE_PRIVATE)
+        val baseDir = filesDir.resolve("osmdroid").apply { mkdirs() }
+        val tileCacheDir = cacheDir.resolve("osmdroid_tiles").apply { mkdirs() }
         Configuration.getInstance().apply {
+            load(this@GeoJoyApplication, osmdroidPrefs)
             userAgentValue = "$packageName/1.0"
-            osmdroidBasePath = filesDir
-            osmdroidTileCache = cacheDir.resolve("osmdroid_tiles")
+            osmdroidBasePath = baseDir
+            osmdroidTileCache = tileCacheDir
+            tileDownloadThreads = 4
+            tileFileSystemThreads = 4
+            tileDownloadMaxQueueSize = 40
         }
 
         database = GeoJoyDatabase.getInstance(this)

@@ -128,6 +128,7 @@ class MockLocationEngine(private val context: Context) {
         if (fusedMockActive) {
             try {
                 fusedClient.setMockLocation(mockLocation)
+                    .addOnFailureListener { fusedMockActive = false }
                 injected = true
             } catch (_: SecurityException) {
                 fusedMockActive = false
