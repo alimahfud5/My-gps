@@ -27,11 +27,6 @@ jobs:
           JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
         run: gradle assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
-      - name: Build Debug APK
-        env:
-          JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
-        run: gradle assembleDebug -Djava.awt.headless=true --no-daemon --stacktrace
-
       - name: Unggah APK sebagai Artifact
         uses: actions/upload-artifact@v4
         with:
